@@ -52,11 +52,9 @@ private:
 
 class CallExprAST : public ExprAST {
 public:
-    template <typename... Args>
-    CallExprAST(std::string callee, std::unique_ptr<Args>... args)
+    CallExprAST(std::string callee, std::vector<std::unique_ptr<ExprAST>> args)
         : m_callee(std::move(callee))
-        , m_args() {
-        (m_args.push_back(std::move(args)), ...);
+        , m_args(std::move(args)) {
     }
 
 private:
@@ -66,11 +64,9 @@ private:
 
 class PrototypeAST {
 public:
-    template <typename... Args>
-    PrototypeAST(std::string callee, Args... args)
+    PrototypeAST(std::string callee, std::vector<std::string> args)
         : m_callee(std::move(callee))
-        , m_args() {
-        (m_args.push_back(std::move(args)), ...);
+        , m_args(std::move(args)) {
     }
 
     const std::string &getName() const {
