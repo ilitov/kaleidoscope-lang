@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "Lexer.hpp"
+#include "ExpressionsAST.hpp"
 
 int main() {
     Lexer lexer;
