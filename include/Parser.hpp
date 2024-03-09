@@ -3,6 +3,7 @@
 
 #include "ExpressionsAST.hpp"
 #include "Lexer.hpp"
+#include "LLVMContextData.hpp"
 
 #include <cassert>
 #include <map>
@@ -11,9 +12,17 @@ class Parser {
     static const inline std::map<char, int> BinOpPrecedence{
         {'<', 10}, {'+', 20}, {'-', 20}, {'*', 40}};
 
+    static const char EOS = ';'; // end of statement
+
 public:
     Parser(Lexer &lexer)
-        : m_lexer(lexer) {
+        : m_lexer(lexer)
+        , m_llvmCtxData("my cool jit") {
+    }
+
+    ~Parser() {
+        // Print everything on exit
+        m_llvmCtxData.m_llvmModule.print(llvm::outs(), nullptr);
     }
 
     /// top ::= definition | external | expression | ';'
@@ -38,7 +47,7 @@ public:
                     break;
                 case Token::TOK_OPERATOR:
                     // Ignore top-level semicolons
-                    if (std::get<char>(m_currentToken.m_value) == ';') {
+                    if (isOperator(m_currentToken, EOS)) {
                         printPrompt();
                         advanceCurrentToken();
                         break;
@@ -53,20 +62,38 @@ public:
 
 private:
     void handleDefinition() {
-        if (parseDefinition()) {
-            std::cout << "Parsed a function definition.\n";
+        if (const auto funcDef = parseDefinition(); funcDef) {
+            std::cout << "Parsed a function definition\n";
+
+            if (const auto value = funcDef->codegen(m_llvmCtxData); value) {
+                value->print(llvm::outs());
+                std::cout << '\n';
+            }
         }
     }
 
     void handleExtern() {
-        if (parseExtern()) {
+        if (const auto externProto = parseExtern(); externProto) {
             std::cout << "Parsed an extern\n";
+
+            if (const auto value = externProto->codegen(m_llvmCtxData); value) {
+                value->print(llvm::outs());
+                std::cout << '\n';
+            }
         }
     }
 
     void handleTopLevelExpression() {
-        if (parseTopLevelExpr()) {
+        if (const auto anonFunc = parseTopLevelExpr(); anonFunc) {
             std::cout << "Parsed a top-level expr\n";
+
+            if (const auto value = anonFunc->codegen(m_llvmCtxData); value) {
+                value->print(llvm::outs());
+                std::cout << '\n';
+
+                // Remove anon function from the LLVM Module(unlink + delete)
+                //value->eraseFromParent();
+            }
         }
     }
 
@@ -89,10 +116,12 @@ private:
                 }
         }
 
-        // eat unknown primary expr
-        advanceCurrentToken();
+        if (!isOperator(m_currentToken, EOS)) {
+            // eat unknown primary expr
+            advanceCurrentToken();
+        }
 
-        return logError("unknown token when expecting an expression");
+        return utils::logError("unknown token when expecting an expression");
     }
 
     /// binoprhs
@@ -155,7 +184,7 @@ private:
     ///   ::= id '(' id* ')'
     std::unique_ptr<PrototypeAST> parsePrototype() {
         if (m_currentToken.m_token != Token::TOK_IDENTIFIER) {
-            return logErrorProto("Expected function name in prototype");
+            return utils::logErrorProto("Expected function name in prototype");
         }
 
         std::string fnName = std::get<std::string>(m_currentToken.m_value);
@@ -164,7 +193,7 @@ private:
         advanceCurrentToken();
 
         if (!openParen(m_currentToken)) {
-            return logErrorProto("Expected '(' in prototype");
+            return utils::logErrorProto("Expected '(' in prototype");
         }
 
         // eat (
@@ -185,7 +214,7 @@ private:
         }
 
         if (!closeParen(m_currentToken)) {
-            return logErrorProto("Expected ')' in prototype");
+            return utils::logErrorProto("Expected ')' in prototype");
         }
 
         // eat )
@@ -280,7 +309,7 @@ private:
                     break;
                 }
 
-                return logError("Expected ')' or ',' in argument list");
+                return utils::logError("Expected ')' or ',' in argument list");
             }
 
             // eat comma
@@ -300,11 +329,11 @@ private:
 
         auto expr = parseExpression();
         if (!expr) {
-            return logError("null expression in parseParenExpr()");
+            return utils::logError("null expression in parseParenExpr()");
         }
 
         if (!closeParen(m_currentToken)) {
-            return logError("expected ')'");
+            return utils::logError("expected ')'");
         }
 
         // eat )
@@ -317,29 +346,21 @@ private:
         m_currentToken = m_lexer.getNextToken();
     }
 
-    static std::unique_ptr<ExprAST> logError(const char *str) {
-        std::cout << "Error: " << str << '\n';
-        return nullptr;
-    }
-
-    static std::unique_ptr<PrototypeAST> logErrorProto(const char *str) {
-        logError(str);
-        return nullptr;
+    static bool isOperator(const TokenData &td, char op) {
+        return td.m_token == Token::TOK_OPERATOR &&
+               std::get<char>(td.m_value) == op;
     }
 
     static bool openParen(const TokenData &td) {
-        return td.m_token == Token::TOK_OPERATOR &&
-               std::get<char>(td.m_value) == '(';
+        return isOperator(td, '(');
     }
 
     static bool closeParen(const TokenData &td) {
-        return td.m_token == Token::TOK_OPERATOR &&
-               std::get<char>(td.m_value) == ')';
+        return isOperator(td, ')');
     }
 
     static bool comma(const TokenData &td) {
-        return td.m_token == Token::TOK_OPERATOR &&
-               std::get<char>(td.m_value) == ',';
+        return isOperator(td, ',');
     }
 
     static int getTokenPrecedence(const TokenData &td) {
@@ -357,6 +378,8 @@ private:
 private:
     Lexer &m_lexer;
     TokenData m_currentToken;
+
+    LLVMContextData m_llvmCtxData;
 };
 
 #endif  // !_PARSER_H_
