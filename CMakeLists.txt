@@ -13,13 +13,13 @@ message(STATUS "LLVM definitions: ${LLVM_DEFINITIONS}")
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
-llvm_map_components_to_libnames(llvm_libs core)
+llvm_map_components_to_libnames(llvm_libs core orcjit)
 message(STATUS "Link to LLVM libs: ${llvm_libs}")
 
 #add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
 set(SOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(SOURCES_LIST ${SOURCES_DIR}/main.cpp)
+set(SOURCES_LIST ${SOURCES_DIR}/main.cpp ${SOURCES_DIR}/LLVMContextData.cpp)
 
 add_executable(
     ${PROJECT_NAME}

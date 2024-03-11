@@ -255,6 +255,9 @@ public:
                     "codegen() verifyFunction failed");
             }
 
+            auto &JIT = ctxData.m_JIT;
+            JIT.m_FPM.run(*func, JIT.m_FAM);
+
             return func;
         }
 

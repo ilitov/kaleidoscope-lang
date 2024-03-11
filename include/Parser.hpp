@@ -17,7 +17,7 @@ class Parser {
 public:
     Parser(Lexer &lexer)
         : m_lexer(lexer)
-        , m_llvmCtxData("my cool jit") {
+        , m_llvmCtxData("Kaleidoscope goes jiitttt") {
     }
 
     ~Parser() {
