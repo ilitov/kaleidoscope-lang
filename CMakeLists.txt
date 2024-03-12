@@ -13,7 +13,7 @@ message(STATUS "LLVM definitions: ${LLVM_DEFINITIONS}")
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
-llvm_map_components_to_libnames(llvm_libs core orcjit)
+llvm_map_components_to_libnames(llvm_libs core orcjit native)
 message(STATUS "Link to LLVM libs: ${llvm_libs}")
 
 #add_compile_options(-Wall -Wextra -Wpedantic -Werror)

@@ -5,6 +5,11 @@
 #include "Lexer.hpp"
 #include "LLVMContextData.hpp"
 
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
+
+#include "KaleidoscopeJIT.h"
+
 #include <cassert>
 #include <map>
 
@@ -14,15 +19,36 @@ class Parser {
 
     static const char EOS = ';'; // end of statement
 
+    static constexpr const char *kModuleName = "Kaleidoscope goes jiitttt";
+    static constexpr const char *kAnonExprIdentifier = "__anon_expr";
+
+    static std::unique_ptr<LLVMContextData> initializeLLVMContextData(std::string_view moduleName,
+                                                                                    const llvm::orc::KaleidoscopeJIT &JIT) {
+        auto llvmCtxData = std::make_unique<LLVMContextData>(moduleName);
+        llvmCtxData->m_llvmModule->setDataLayout(JIT.getDataLayout());
+        return llvmCtxData;
+    }
+
+    void updateLLVMContextData(std::string_view moduleName = kModuleName) {
+        m_llvmCtxData = initializeLLVMContextData(kModuleName, *m_JIT);
+    }
+
 public:
     Parser(Lexer &lexer)
         : m_lexer(lexer)
-        , m_llvmCtxData("Kaleidoscope goes jiitttt") {
+        , m_llvmCtxData()
+        , m_JIT() {
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmParser();
+        llvm::InitializeNativeTargetAsmPrinter();
+
+        llvm::ExitOnError{}(llvm::orc::KaleidoscopeJIT::Create().moveInto(m_JIT));
+        m_llvmCtxData = initializeLLVMContextData(kModuleName, *m_JIT);
     }
 
     ~Parser() {
         // Print everything on exit
-        m_llvmCtxData.m_llvmModule.print(llvm::outs(), nullptr);
+        m_llvmCtxData->m_llvmModule->print(llvm::outs(), nullptr);
     }
 
     /// top ::= definition | external | expression | ';'
@@ -65,7 +91,7 @@ private:
         if (const auto funcDef = parseDefinition(); funcDef) {
             std::cout << "Parsed a function definition\n";
 
-            if (const auto value = funcDef->codegen(m_llvmCtxData); value) {
+            if (const auto value = funcDef->codegen(*m_llvmCtxData); value) {
                 value->print(llvm::outs());
                 std::cout << '\n';
             }
@@ -76,7 +102,7 @@ private:
         if (const auto externProto = parseExtern(); externProto) {
             std::cout << "Parsed an extern\n";
 
-            if (const auto value = externProto->codegen(m_llvmCtxData); value) {
+            if (const auto value = externProto->codegen(*m_llvmCtxData); value) {
                 value->print(llvm::outs());
                 std::cout << '\n';
             }
@@ -87,12 +113,35 @@ private:
         if (const auto anonFunc = parseTopLevelExpr(); anonFunc) {
             std::cout << "Parsed a top-level expr\n";
 
-            if (const auto value = anonFunc->codegen(m_llvmCtxData); value) {
+            if (const auto value = anonFunc->codegen(*m_llvmCtxData); value) {
                 value->print(llvm::outs());
                 std::cout << '\n';
 
                 // Remove anon function from the LLVM Module(unlink + delete)
-                //value->eraseFromParent();
+                // value->eraseFromParent();
+
+                // Create a ResourceTracker to track JIT'd memory allocated to our anonymous
+                // expression -- that way we can free it after executing
+                auto resourceTracker = m_JIT->getMainJITDylib().createResourceTracker();
+
+                auto threadSafeModule =
+                    llvm::orc::ThreadSafeModule(std::move(m_llvmCtxData->m_llvmModule), std::move(m_llvmCtxData->m_llvmContext));
+
+                llvm::ExitOnError{}(m_JIT->addModule(std::move(threadSafeModule), resourceTracker));
+
+                // We lost the module -> create new one(just build the whole LLVM context with all passes and managers)
+                updateLLVMContextData();
+
+                // Search the JIT for the __anon_expr symbol
+                auto exprSymbol = llvm::ExitOnError{}(m_JIT->lookup(kAnonExprIdentifier));
+
+                // Get the symbol's address and cast it to the right type (takes no arguments, returns a double) so we can call
+                // it as a native function
+                double (*nativeAnonFunc)() = exprSymbol.getAddress().toPtr<double (*)()>();
+                std::cout << "Evaluated to " << nativeAnonFunc() << '\n';
+
+                // Delete the anonymous expression module from the JIT
+                llvm::ExitOnError{}(resourceTracker->remove());
             }
         }
     }
@@ -259,7 +308,7 @@ private:
 
         // Make an anonymous proto
         auto proto =
-            std::make_unique<PrototypeAST>("", std::vector<std::string>());
+            std::make_unique<PrototypeAST>(kAnonExprIdentifier, std::vector<std::string>());
         return std::make_unique<FunctionAST>(std::move(*proto),
                                              std::move(expr));
     }
@@ -379,7 +428,9 @@ private:
     Lexer &m_lexer;
     TokenData m_currentToken;
 
-    LLVMContextData m_llvmCtxData;
+    std::unique_ptr<LLVMContextData> m_llvmCtxData;
+
+    std::unique_ptr<llvm::orc::KaleidoscopeJIT> m_JIT;
 };
 
 #endif  // !_PARSER_H_

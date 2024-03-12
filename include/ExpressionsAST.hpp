@@ -34,7 +34,7 @@ public:
     }
 
     llvm::Value *codegen(LLVMContextData &ctxData) override {
-        return llvm::ConstantFP::get(ctxData.m_llvmContext,
+        return llvm::ConstantFP::get(*ctxData.m_llvmContext,
                                      llvm::APFloat{m_value});
     }
 
@@ -102,7 +102,7 @@ public:
                                                            "cmptmp");
                 // Convert bool 0/1 to double 0.0 or 1.0
                 return ctxData.m_builder.CreateUIToFP(
-                    lhsValue, llvm::Type::getDoubleTy(ctxData.m_llvmContext),
+                    lhsValue, llvm::Type::getDoubleTy(*ctxData.m_llvmContext),
                     "booltmp");
             default:
                 return utils::logErrorLLVMValue("Invalid binary operator");
@@ -126,7 +126,7 @@ public:
 
     llvm::Value *codegen(LLVMContextData &ctxData) override {
         // Look up the name in the global module table
-        llvm::Function *calleeFunc = ctxData.m_llvmModule.getFunction(m_callee);
+        llvm::Function *calleeFunc = ctxData.m_llvmModule->getFunction(m_callee);
         if (!calleeFunc) {
             return utils::logErrorLLVMValue("Unknown function referenced");
         }
@@ -173,7 +173,7 @@ public:
 
     llvm::Function *codegen(LLVMContextData &ctxData) {
         llvm::Type *const doubleType =
-            llvm::Type::getDoubleTy(ctxData.m_llvmContext);
+            llvm::Type::getDoubleTy(*ctxData.m_llvmContext);
 
         std::vector<llvm::Type *> types{m_args.size(), doubleType};
 
@@ -182,7 +182,7 @@ public:
 
         llvm::Function *func =
             llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                   m_callee, ctxData.m_llvmModule);
+                                   m_callee, *ctxData.m_llvmModule);
 
         // Set names for all arguments
         for (int i = 0; llvm::Argument &arg : func->args()) {
@@ -208,7 +208,7 @@ public:
         // First, check for an existing function from a previous 'extern'
         // declaration
         llvm::Function *func =
-            ctxData.m_llvmModule.getFunction(m_prototype.getName());
+            ctxData.m_llvmModule->getFunction(m_prototype.getName());
 
         // Create the prototype IR if it wasn't found
         if (!func) {
@@ -233,7 +233,7 @@ public:
 
         // Create a new basic block to start insertion into
         llvm::BasicBlock *basicBlock =
-            llvm::BasicBlock::Create(ctxData.m_llvmContext, "entry", func);
+            llvm::BasicBlock::Create(*ctxData.m_llvmContext, "entry", func);
 
         ctxData.m_builder.SetInsertPoint(basicBlock);
 
@@ -255,8 +255,8 @@ public:
                     "codegen() verifyFunction failed");
             }
 
-            auto &JIT = ctxData.m_JIT;
-            JIT.m_FPM.run(*func, JIT.m_FAM);
+            auto &llvmOpt = ctxData.m_llvmOpt;
+            llvmOpt.m_FPM.run(*func, llvmOpt.m_FAM);
 
             return func;
         }

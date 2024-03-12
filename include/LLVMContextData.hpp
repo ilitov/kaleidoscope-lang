@@ -7,7 +7,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 
-// LLVMJitContextData includes
+// LLVMOptContextData includes
 #include "llvm/IR/PassManager.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
@@ -22,14 +22,15 @@
 
 #include <map>
 #include <string_view>
+#include <memory>
 
-struct LLVMJitContextData {
-    LLVMJitContextData(llvm::LLVMContext& llvmCtx);
-    LLVMJitContextData(const LLVMJitContextData&) = delete;
-    LLVMJitContextData& operator=(const LLVMJitContextData&) = delete;
-    LLVMJitContextData(LLVMJitContextData&&) = delete;
-    LLVMJitContextData& operator=(LLVMJitContextData&&) = delete;
-    ~LLVMJitContextData() = default;
+struct LLVMOptContextData {
+    LLVMOptContextData(llvm::LLVMContext& llvmCtx);
+    LLVMOptContextData(const LLVMOptContextData&) = delete;
+    LLVMOptContextData& operator=(const LLVMOptContextData&) = delete;
+    LLVMOptContextData(LLVMOptContextData&&) = delete;
+    LLVMOptContextData& operator=(LLVMOptContextData&&) = delete;
+    ~LLVMOptContextData() = default;
 
     // Pass and analysis managers
     llvm::FunctionPassManager m_FPM;
@@ -49,13 +50,13 @@ struct LLVMContextData {
     LLVMContextData& operator=(LLVMContextData&&) = delete;
     ~LLVMContextData() = default;
 
-    llvm::LLVMContext m_llvmContext;
+    std::unique_ptr<llvm::LLVMContext> m_llvmContext;
     llvm::IRBuilder<> m_builder;
-    llvm::Module m_llvmModule;
+    std::unique_ptr<llvm::Module> m_llvmModule;
 
     std::map<std::string_view, llvm::Value*> m_namedValues;
 
-    LLVMJitContextData m_JIT;
+    LLVMOptContextData m_llvmOpt;
 };
 
 #endif  // !_LLVM_CONTEXT_DATA_HPP_
